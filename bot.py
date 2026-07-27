@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from html import escape
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden
 from telegram.ext import (
@@ -624,22 +624,35 @@ async def finish_onboarding(user_id: int, query=None, context: ContextTypes.DEFA
     )
     if query is not None:
         await safe_edit(query, text, parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        if context is not None:
+            await context.bot.send_message(
+                user_id,
+                "از منوی پایین هم می‌تونی دوباره <b>استارت</b> بزنی.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=main_menu_keyboard(),
+            )
     elif context is not None:
         await context.bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        await context.bot.send_message(
+            user_id,
+            "از منوی پایین هم می‌تونی دوباره <b>استارت</b> بزنی.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=main_menu_keyboard(),
+        )
 
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Simple landing menu like reference screenshots: only Start."""
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🚀 استارت", callback_data="menu_start")],
-        ]
+def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Bottom reply keyboard like reference bot: only Start."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("🚀 استارت")]],
+        resize_keyboard=True,
+        is_persistent=True,
     )
 
 
 def app_menu_keyboard() -> InlineKeyboardMarkup:
-    """Full app menu after user presses Start."""
+    """Full app inline menu after Start / onboarding."""
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("📝 ثبت گزارش امروز", callback_data="open_report")],
@@ -658,17 +671,18 @@ def app_menu_keyboard() -> InlineKeyboardMarkup:
 
 
 def landing_text() -> str:
-    """Landing/home text inspired by reference bot style."""
+    """Landing text in the style of the reference screenshots."""
     return (
-        "<b>🤖 ARIAMIR TRAKER</b>\n"
         "━━━━━━━━━━━━━━\n"
+        "<b>🤖 ARIAMIR TRAKER</b>\n"
+        "━━━━━━━━━━━━━━\n\n"
         "به ربات خوش اومدی 🌱\n\n"
-        "اینجا می‌تونی چالش رشد شخصیت رو مدیریت کنی:\n"
+        "اینجا می‌تونی مسیر رشد شخصیت رو بسازی و پیگیری کنی:\n"
         "• انتخاب مدت چالش\n"
-        "• ساخت و پیگیری تسک‌های روزانه\n"
-        "• ثبت گزارش، داشبورد و استریک\n"
-        "• یادآوری شخصی\n\n"
-        "برای شروع، دکمه <b>استارت</b> رو بزن 👇"
+        "• تعریف تسک‌های روزانه\n"
+        "• ثبت گزارش و دیدن پیشرفت\n"
+        "• استریک، تاریخچه و یادآوری\n\n"
+        "برای شروع، از منوی پایین روی <b>استارت</b> بزن 👇"
     )
 
 
@@ -1219,6 +1233,33 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = (update.effective_message.text or "").strip()
 
+    # Reply-keyboard Start button (landing menu)
+    if text in {"🚀 استارت", "استارت", "start", "Start", "/start"}:
+        # /start command is handled separately; this catches the reply button
+        if text != "/start":
+            if not is_onboarding_done(uid):
+                start_onboarding(uid)
+                await show_onboarding(uid, context)
+                return
+            days = get_challenge_days(uid)
+            tasks = get_user_tasks(uid)
+            pillars = "\n".join(f"{t['emoji']} {escape(t['title'])}" for t in tasks)
+            body = (
+                "<b>✅ شروع شد</b>\n"
+                "━━━━━━━━━━━━━━\n"
+                f"📅 چالش فعلی: <b>{days}</b> روز\n"
+                f"✅ تعداد تسک‌ها: <b>{len(tasks)}</b>\n\n"
+                "<b>تسک‌های فعال:</b>\n"
+                f"{pillars}\n\n"
+                "یکی از گزینه‌ها رو انتخاب کن 👇"
+            )
+            await update.effective_message.reply_text(
+                body,
+                parse_mode=ParseMode.HTML,
+                reply_markup=app_menu_keyboard(),
+            )
+            return
+
     # Onboarding custom inputs
     if uid in onboarding_state and not is_onboarding_done(uid):
         st = onboarding_state[uid]
@@ -1463,14 +1504,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     if data == "home":
-        await safe_edit(
-            query,
-            landing_text(),
+        # Back to landing: only Start on reply keyboard
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await context.bot.send_message(
+            chat_id=uid,
+            text=landing_text(),
             parse_mode=ParseMode.HTML,
             reply_markup=main_menu_keyboard(),
         )
     elif data == "menu_start":
-        # After Start: go to onboarding if needed, otherwise full app menu
+        # Inline fallback if old messages still have it
         if not is_onboarding_done(uid):
             start_onboarding(uid)
             await show_onboarding(uid, context, edit_query=query)
