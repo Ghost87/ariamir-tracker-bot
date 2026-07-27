@@ -73,16 +73,15 @@ MOTIVATIONS = [
 
 
 # Reply-keyboard labels (custom keyboard)
+# Open/close is done by Telegram's native grid button next to the input box.
 BTN_START = "🚀 استارت"
-BTN_OPEN_MENU = "📋 باز کردن منو"
-BTN_CLOSE_MENU = "🔼 بستن منو"
 BTN_REPORT = "📝 ثبت گزارش امروز"
 BTN_PANEL = "📊 داشبورد من"
 BTN_HISTORY = "📅 تاریخچه"
 BTN_ACHIEVE = "🏆 رکوردها"
 BTN_SETTINGS = "⚙️ تنظیمات"
 BTN_HELP = "ℹ️ راهنما"
-BTN_HOME = "🏠 منوی اصلی"
+BTN_HOME = "🏠 صفحه اول"
 
 pending_reports: dict[int, dict] = {}
 admin_login_state: dict[int, str] = {}
@@ -650,46 +649,43 @@ async def finish_onboarding(user_id: int, query=None, context: ContextTypes.DEFA
 
 
 def landing_keyboard() -> ReplyKeyboardMarkup:
-    """Collapsed custom keyboard: only Start (and open menu)."""
+    """Custom keyboard after /start: only Start.
+    Telegram client shows a native grid icon to show/hide this keyboard.
+    """
     return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton(BTN_START)],
-            [KeyboardButton(BTN_OPEN_MENU)],
-        ],
+        [[KeyboardButton(BTN_START)]],
         resize_keyboard=True,
         is_persistent=True,
-        input_field_placeholder="از منوی پایین استارت بزن…",
+        input_field_placeholder="استارت را بزن…",
     )
 
 
 def features_keyboard() -> ReplyKeyboardMarkup:
-    """Expanded custom keyboard with app features (like reference bots)."""
+    """Expanded custom keyboard with app features.
+    User opens/closes it with Telegram's built-in keyboard toggle (grid icon).
+    """
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(BTN_REPORT)],
             [KeyboardButton(BTN_PANEL), KeyboardButton(BTN_HISTORY)],
             [KeyboardButton(BTN_ACHIEVE), KeyboardButton(BTN_SETTINGS)],
-            [KeyboardButton(BTN_HELP)],
-            [KeyboardButton(BTN_CLOSE_MENU)],
+            [KeyboardButton(BTN_HELP), KeyboardButton(BTN_HOME)],
         ],
         resize_keyboard=True,
         is_persistent=True,
-        input_field_placeholder="یک گزینه از منو انتخاب کن…",
+        input_field_placeholder="یک گزینه انتخاب کن…",
     )
 
 
-# Backwards-compatible aliases
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return landing_keyboard()
 
 
 def app_menu_keyboard() -> ReplyKeyboardMarkup:
-    """After start, show feature custom keyboard (not inline dump)."""
     return features_keyboard()
 
 
 def landing_text() -> str:
-    """Landing text in the style of the reference screenshots."""
     return (
         "━━━━━━━━━━━━━━\n"
         "<b>🤖 ARIAMIR TRAKER</b>\n"
@@ -700,15 +696,15 @@ def landing_text() -> str:
         "• تعریف تسک‌های روزانه\n"
         "• ثبت گزارش و دیدن پیشرفت\n"
         "• استریک، تاریخچه و یادآوری\n\n"
-        "از <b>منوی پایین</b> روی <b>استارت</b> بزن 👇\n"
-        "می‌تونی منوی امکانات را باز و بسته هم بکنی."
+        "از کیبورد پایین روی <b>استارت</b> بزن 👇\n"
+        "برای باز/بسته کردن کیبورد، همان دکمه <b>چهارخانه</b> کنار کادر پیام را بزن."
     )
 
 
 def started_text(uid: int) -> str:
     days = get_challenge_days(uid)
     tasks = get_user_tasks(uid)
-    pillars = "\n".join(f"{t['emoji']} {escape(t['title'])}" for t in tasks) or "—"
+    pillars = "\n".join(f"{x['emoji']} {escape(x['title'])}" for x in tasks) or "—"
     return (
         "<b>✅ آماده استفاده</b>\n"
         "━━━━━━━━━━━━━━\n"
@@ -717,13 +713,13 @@ def started_text(uid: int) -> str:
         "<b>تسک‌های فعال:</b>\n"
         f"{pillars}\n\n"
         "از <b>کیبورد پایین</b> یکی را انتخاب کن.\n"
-        f"برای جمع‌کردن منو: <b>{BTN_CLOSE_MENU}</b>"
+        "برای مخفی/ظاهر کردن کیبورد → دکمه چهارخانه کنار کادر نوشتن."
     )
 
 
 async def open_features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, *, edit_query=None):
-    """Open expanded custom keyboard with features."""
-    uid = update.effective_user.id if update.effective_user else None
+    """Show expanded feature custom keyboard."""
+    uid = update.effective_user.id if update and update.effective_user else None
     if edit_query is not None:
         uid = edit_query.from_user.id
     if uid is None:
@@ -735,17 +731,17 @@ async def open_features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
     text = started_text(uid)
     kb = features_keyboard()
     if edit_query is not None:
-        # can't attach reply keyboard via edit reliably; send new message
         try:
             await edit_query.edit_message_text(text, parse_mode=ParseMode.HTML)
         except Exception:
             pass
-        await context.bot.send_message(uid, "منوی امکانات باز شد 👇", reply_markup=kb)
+        await context.bot.send_message(uid, "منوی امکانات آماده است 👇", reply_markup=kb)
     else:
         await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
-async def close_features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def go_home_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Back to landing with only Start on custom keyboard."""
     await update.effective_message.reply_text(
         landing_text(),
         parse_mode=ParseMode.HTML,
@@ -1142,7 +1138,7 @@ async def send_home(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
         chat_id,
         landing_text(),
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_keyboard(),
+        reply_markup=landing_keyboard(),
     )
 
 
@@ -1151,7 +1147,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
         landing_text(),
         parse_mode=ParseMode.HTML,
-        reply_markup=main_menu_keyboard(),
+        reply_markup=landing_keyboard(),
     )
 
 
@@ -1301,14 +1297,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.effective_message.text or "").strip()
 
     # ===== Custom reply keyboard actions =====
+    # Note: open/close of the keyboard UI is Telegram's native grid button.
+    # We only switch keyboard *content* (Start-only vs features).
     if text in {BTN_START, "استارت", "Start", "start"}:
         await open_features_menu(update, context)
         return
-    if text in {BTN_OPEN_MENU, "باز کردن منو", "منو"}:
-        await open_features_menu(update, context)
-        return
-    if text in {BTN_CLOSE_MENU, "بستن منو", BTN_HOME, "منوی اصلی"}:
-        await close_features_menu(update, context)
+    if text in {BTN_HOME, "منوی اصلی", "صفحه اول", "خانه"}:
+        await go_home_screen(update, context)
         return
     if text == BTN_REPORT:
         if not is_onboarding_done(uid):
@@ -1358,14 +1353,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (
                 "<b>ℹ️ راهنمای ARIAMIR TRAKER</b>\n"
                 "ردیاب چالش رشد شخصی\n\n"
-                "از کیبورد پایین:\n"
-                f"• {BTN_START} / {BTN_OPEN_MENU} — باز کردن امکانات\n"
+                "کیبورد پایین (دکمه چهارخانه کنار کادر پیام):\n"
+                f"• {BTN_START} — شروع / باز شدن امکانات\n"
                 f"• {BTN_REPORT} — گزارش روزانه\n"
                 f"• {BTN_PANEL} — داشبورد\n"
                 f"• {BTN_HISTORY} — تاریخچه\n"
                 f"• {BTN_SETTINGS} — تنظیمات\n"
-                f"• {BTN_CLOSE_MENU} — بستن منو (فقط استارت)\n\n"
-                "دستور Bot Menu فقط /start است."
+                f"• {BTN_HOME} — برگشت به صفحه اول (فقط استارت)\n\n"
+                "باز و بسته کردن خودِ کیبورد با دکمه <b>چهارخانه</b> تلگرام است.\n"
+                "در منوی دستورات ربات فقط /start وجود دارد."
             ),
             parse_mode=ParseMode.HTML,
             reply_markup=features_keyboard(),
@@ -1625,7 +1621,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=uid,
             text=landing_text(),
             parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_keyboard(),
+            reply_markup=landing_keyboard(),
         )
     elif data == "menu_start":
         # Inline fallback if old messages still have it
