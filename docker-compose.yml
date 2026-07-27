@@ -1,0 +1,13 @@
+services:
+  ariamir-tracker:
+    build: .
+    container_name: ariamir-tracker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+      DB_PATH: /app/data/ariamir_tracker.db
+      BACKUP_DIR: /app/data/backups
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,21 @@
+[Unit]
+Description=ARIAMIR TRAKER Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ariamir
+Group=ariamir
+WorkingDirectory=/opt/ariamir-tracker
+EnvironmentFile=/opt/ariamir-tracker/.env
+ExecStart=/opt/ariamir-tracker/.venv/bin/python /opt/ariamir-tracker/bot.py
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

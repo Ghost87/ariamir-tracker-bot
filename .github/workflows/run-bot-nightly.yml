@@ -1,0 +1,246 @@
+name: Run ARIAMIR TRAKER windowed
+
+# IMPORTANT about free minutes (private repos):
+# GitHub Free includes ~2000 Actions minutes/month for PRIVATE repos.
+# The old config (4 x ~3h45m daily) burned ~27000 minutes/month and dies in ~2 days.
+#
+# This lean config targets ~1 evening window only:
+#   Tehran 21:30 for ~90 minutes  => ~2700 min/month (still slightly over free private)
+# For private repos that already exhausted minutes, make the repo PUBLIC
+# (public Actions minutes are free) OR use a free always-on host (Oracle VPS).
+#
+# Memory still persists on branch `bot-data`.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Tehran 21:30 -> UTC 18:00 (UTC+3:30)
+    - cron: "0 18 * * *"
+
+concurrency:
+  group: ariamir-tracker-bot-live
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    # ~95 minutes hard stop
+    timeout-minutes: 100
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore persistent memory from bot-data branch
+        run: |
+          set -e
+          mkdir -p data/backups
+          echo "Fetching bot-data branch (if it exists)..."
+          if git ls-remote --exit-code --heads origin bot-data >/dev/null 2>&1; then
+            git fetch origin bot-data:bot-data --depth=1
+            git checkout bot-data -- data 2>/dev/null || true
+            echo "Restored data/ from bot-data"
+            ls -la data || true
+            if [ -f data/ariamir_tracker.db ]; then
+              python - <<'PY'
+          import sqlite3
+          db = "data/ariamir_tracker.db"
+          conn = sqlite3.connect(db)
+          conn.execute("PRAGMA wal_checkpoint(FULL)")
+          tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+          print("DB tables:", tables)
+          if "users" in tables:
+              print("users:", conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+          if "reports" in tables:
+              print("reports:", conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0])
+          conn.close()
+          PY
+            else
+              echo "No database file yet — first run will create it."
+            fi
+          else
+            echo "bot-data branch does not exist yet — starting with empty memory."
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create .env file from GitHub Secrets
+        run: |
+          mkdir -p data/backups
+          cat > .env <<EOF
+          BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+          ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+          REMINDER_HOUR=22
+          REMINDER_MINUTE=0
+          CHALLENGE_DAYS=38
+          DATA_DIR=./data
+          DB_PATH=./data/ariamir_tracker.db
+          BACKUP_DIR=./data/backups
+          EOF
+          sed -i 's/^[[:space:]]*//' .env
+          python - <<'PY'
+          from pathlib import Path
+          keys = []
+          for line in Path(".env").read_text().splitlines():
+              if "=" in line and not line.strip().startswith("#"):
+                  k, v = line.split("=", 1)
+                  keys.append(f"{k}={'set' if v.strip() else 'EMPTY'}")
+          print("env keys:", ", ".join(keys))
+          PY
+
+      - name: Show planned window (Asia/Tehran)
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          tz = ZoneInfo("Asia/Tehran")
+          now = datetime.now(tz)
+          end = now + timedelta(minutes=90)
+          print(f"Start Tehran: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+          print(f"Target end:  {end.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+          print("Lean schedule: once daily ~21:30 Tehran for ~90 minutes")
+          print("Memory: bot-data branch")
+          PY
+
+      - name: Run bot for evening window (~90m)
+        run: |
+          set +e
+          echo "Starting ARIAMIR TRAKER lean windowed run..."
+          # 5400s = 90 minutes
+          timeout 5400 python bot.py
+          code=$?
+          echo "Bot process exited with code: $code"
+          echo "Windowed run finished."
+          exit 0
+
+      - name: Checkpoint SQLite and prepare data for save
+        if: always()
+        run: |
+          set -e
+          mkdir -p data/backups
+          python - <<'PY'
+          import os, sqlite3, shutil
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          db = "data/ariamir_tracker.db"
+          if not os.path.exists(db):
+              print("No DB to checkpoint")
+              raise SystemExit(0)
+
+          conn = sqlite3.connect(db, timeout=60)
+          conn.execute("PRAGMA busy_timeout=60000")
+          result = conn.execute("PRAGMA wal_checkpoint(FULL)").fetchone()
+          print("wal_checkpoint:", result)
+          users = reports = 0
+          try:
+              users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+              reports = conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+          except Exception as e:
+              print("count failed:", e)
+          conn.close()
+          print(f"memory snapshot users={users} reports={reports}")
+
+          os.makedirs("data/backups", exist_ok=True)
+          stamp = datetime.now(ZoneInfo("Asia/Tehran")).strftime("%Y-%m-%d_%H-%M-%S")
+          dst = f"data/backups/ariamir_tracker_backup_{stamp}.db"
+          shutil.copy2(db, dst)
+          print("backup:", dst)
+
+          for side in (db + "-wal", db + "-shm", db + "-journal"):
+              if os.path.exists(side):
+                  os.remove(side)
+                  print("removed", side)
+          PY
+          ls -1t data/backups/*.db 2>/dev/null | tail -n +11 | xargs -r rm -f || true
+          ls -la data data/backups || true
+
+      - name: Save persistent memory to bot-data branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if [ ! -f data/ariamir_tracker.db ]; then
+            echo "No database file — nothing to persist."
+            exit 0
+          fi
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          WORK=$(mktemp -d)
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          if git ls-remote --exit-code --heads origin bot-data >/dev/null 2>&1; then
+            git clone --branch bot-data --depth 1 "$REPO_URL" "$WORK"
+          else
+            git clone --depth 1 "$REPO_URL" "$WORK"
+            cd "$WORK"
+            git checkout --orphan bot-data
+            git rm -rf . >/dev/null 2>&1 || true
+            find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+            cd -
+          fi
+
+          rm -rf "$WORK/data"
+          mkdir -p "$WORK/data"
+          cp -a data/. "$WORK/data/"
+          rm -f "$WORK/data/.env" "$WORK/.env" 2>/dev/null || true
+          find "$WORK/data" -name '*.db-wal' -delete 2>/dev/null || true
+          find "$WORK/data" -name '*.db-shm' -delete 2>/dev/null || true
+          find "$WORK/data" -name '*.db-journal' -delete 2>/dev/null || true
+
+          cat > "$WORK/README.md" <<'EOF'
+          # bot-data (persistent memory)
+
+          Runtime memory for ARIAMIR TRAKER:
+          - data/ariamir_tracker.db
+          - data/backups/
+
+          Updated automatically by GitHub Actions after each bot run.
+          Do not put secrets here.
+          EOF
+          sed -i 's/^[[:space:]]*//' "$WORK/README.md"
+
+          cat > "$WORK/.gitignore" <<'EOF'
+          .env
+          *.db-wal
+          *.db-shm
+          *.db-journal
+          __pycache__/
+          EOF
+          sed -i 's/^[[:space:]]*//' "$WORK/.gitignore"
+
+          cd "$WORK"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No memory changes to commit."
+          else
+            git commit -m "Persist bot memory $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push origin HEAD:bot-data
+            echo "Memory saved to origin/bot-data"
+          fi
+
+      - name: Upload database artifact backup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ariamir-tracker-data-${{ github.run_id }}
+          path: data
+          if-no-files-found: ignore
+          retention-days: 7

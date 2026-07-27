@@ -1,0 +1,28 @@
+# secrets
+.env
+.env.local
+
+# runtime
+data/
+backups/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# logs / editor
+run.log
+*.log
+.DS_Store
+.idea/
+.vscode/
