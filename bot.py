@@ -1619,8 +1619,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query,
             "<b>🙂 حال امروزت چطور بود؟</b>",
             parse_mode=ParseMode.HTML,
-            reply_markup=mood_keyboard(),
-        )
+            reply_markup=mood_keyboard())
     elif data.startswith("mood:"):
         if get_today_report(uid) is not None and not is_edit_unlocked(uid):
             await open_report_message(uid, context, edit_query=query)
@@ -1660,9 +1659,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(
             query,
             f"<b>{msg}</b>\n\nامتیاز امروز: <b>{score}/{total}</b>\n\n{user_panel_text(uid)}",
-            parse_mode=ParseMode.HTML,
-            reply_markup=features_keyboard(),
-        )
+            parse_mode=ParseMode.HTML)
     elif data == "my_panel":
         await safe_edit(query, user_panel_text(uid), parse_mode=ParseMode.HTML)
     elif data == "history":
@@ -1690,15 +1687,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query,
             tasks_manage_text(uid),
             parse_mode=ParseMode.HTML,
-            reply_markup=tasks_keyboard(uid),
-        )
+            reply_markup=tasks_keyboard(uid))
     elif data == "task_add":
         if len(get_user_tasks(uid)) >= 12:
             await safe_edit(
                 query,
                 "❌ حداکثر ۱۲ تسک. اول یکی را حذف کن.",
-                reply_markup=tasks_keyboard(uid),
-            )
+                reply_markup=tasks_keyboard(uid))
             return
         user_text_state[uid] = {"mode": "task_add"}
         await safe_edit(
@@ -1734,8 +1729,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [InlineKeyboardButton("✅ بله، پیش‌فرض", callback_data="task_reset_yes")],
                     [InlineKeyboardButton("❌ نه", callback_data="manage_tasks")],
                 ]
-            ),
-        )
+            ))
     elif data == "task_reset_yes":
         set_user_tasks(uid, DEFAULT_TASKS)
         pending_reports.pop(uid, None)
@@ -1764,8 +1758,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [InlineKeyboardButton("✅ بله، شروع دوباره", callback_data="reset_challenge_yes")],
                     [InlineKeyboardButton("❌ نه", callback_data="settings")],
                 ]
-            ),
-        )
+            ))
     elif data == "reset_challenge_yes":
         with db() as conn:
             conn.execute("UPDATE users SET start_date=? WHERE user_id=?", (today_str(), uid))
@@ -1801,8 +1794,7 @@ async def handle_admin_callback(query, context: ContextTypes.DEFAULT_TYPE):
             query,
             "<b>🔐 پنل مدیریت</b>\nیک گزینه را انتخاب کن:",
             parse_mode=ParseMode.HTML,
-            reply_markup=admin_keyboard(),
-        )
+            reply_markup=admin_keyboard())
     elif data == "admin:summary":
         await safe_edit(query, admin_summary_text(), parse_mode=ParseMode.HTML, reply_markup=admin_keyboard())
     elif data == "admin:ranking":
@@ -1828,8 +1820,7 @@ async def handle_admin_callback(query, context: ContextTypes.DEFAULT_TYPE):
                         InlineKeyboardButton("🏠 پنل", callback_data="admin:back"),
                     ],
                 ]
-            ),
-        )
+            ))
     elif data.startswith("admin:history:"):
         target_id = int(data.split(":")[-1])
         await safe_edit(
@@ -1838,8 +1829,7 @@ async def handle_admin_callback(query, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("⬅️ برگشت", callback_data=f"admin:user:{target_id}")]]
-            ),
-        )
+            ))
     elif data == "admin:csv":
         path = export_csv()
         with open(path, "rb") as f:
@@ -1870,8 +1860,7 @@ async def admin_users(query):
         query,
         "<b>👥 کاربران ربات</b>\nیک نفر را انتخاب کن:",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+        reply_markup=InlineKeyboardMarkup(buttons))
 
 
 def admin_summary_text() -> str:
