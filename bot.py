@@ -2107,13 +2107,11 @@ def main():
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Public Bot Menu command is only /start (set in post_init).
+    # Other features are on the custom reply keyboard.
+    # /admin stays registered but is NOT listed in Bot commands (hidden).
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("report", report_cmd))
-    app.add_handler(CommandHandler("panel", panel_cmd))
-    app.add_handler(CommandHandler("history", history_cmd))
-    app.add_handler(CommandHandler("settings", settings_cmd))
-    app.add_handler(CommandHandler("admin", admin_cmd))
+    app.add_handler(CommandHandler("admin", admin_cmd))  # secret: type manually
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
@@ -2124,10 +2122,20 @@ def main():
 
     # Bot Menu (Telegram side menu): only /start
     async def _post_init(application: Application):
-        from telegram import BotCommand
-        await application.bot.set_my_commands(
-            [BotCommand("start", "شروع ربات")]
-        )
+        from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, BotCommandScopeAllChatAdministrators
+        only_start = [BotCommand("start", "شروع ربات")]
+        scopes = [
+            BotCommandScopeDefault(),
+            BotCommandScopeAllPrivateChats(),
+            BotCommandScopeAllGroupChats(),
+            BotCommandScopeAllChatAdministrators(),
+        ]
+        for scope in scopes:
+            try:
+                await application.bot.delete_my_commands(scope=scope)
+            except Exception:
+                pass
+            await application.bot.set_my_commands(only_start, scope=scope)
     app.post_init = _post_init
 
     print("ARIAMIR TRAKER ULTRA is running...")
