@@ -71,6 +71,19 @@ MOTIVATIONS = [
     "انضباط یعنی حتی وقتی حوصله نداری، با خودت روراست بمونی.",
 ]
 
+
+# Reply-keyboard labels (custom keyboard)
+BTN_START = "🚀 استارت"
+BTN_OPEN_MENU = "📋 باز کردن منو"
+BTN_CLOSE_MENU = "🔼 بستن منو"
+BTN_REPORT = "📝 ثبت گزارش امروز"
+BTN_PANEL = "📊 داشبورد من"
+BTN_HISTORY = "📅 تاریخچه"
+BTN_ACHIEVE = "🏆 رکوردها"
+BTN_SETTINGS = "⚙️ تنظیمات"
+BTN_HELP = "ℹ️ راهنما"
+BTN_HOME = "🏠 منوی اصلی"
+
 pending_reports: dict[int, dict] = {}
 admin_login_state: dict[int, str] = {}
 user_text_state: dict[int, dict] = {}
@@ -623,51 +636,56 @@ async def finish_onboarding(user_id: int, query=None, context: ContextTypes.DEFA
         "اگر خواستی بعداً از ⚙️ تنظیمات عوضش کن."
     )
     if query is not None:
-        await safe_edit(query, text, parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        await safe_edit(query, text, parse_mode=ParseMode.HTML)
         if context is not None:
             await context.bot.send_message(
                 user_id,
-                "از منوی پایین هم می‌تونی دوباره <b>استارت</b> بزنی.",
-                parse_mode=ParseMode.HTML,
-                reply_markup=main_menu_keyboard(),
+                "منوی امکانات در کیبورد پایین فعال شد 👇",
+                reply_markup=features_keyboard(),
             )
     elif context is not None:
-        await context.bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
-        await context.bot.send_message(
-            user_id,
-            "از منوی پایین هم می‌تونی دوباره <b>استارت</b> بزنی.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=main_menu_keyboard(),
-        )
+        await context.bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=features_keyboard())
 
 
 
-def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Bottom reply keyboard like reference bot: only Start."""
+
+def landing_keyboard() -> ReplyKeyboardMarkup:
+    """Collapsed custom keyboard: only Start (and open menu)."""
     return ReplyKeyboardMarkup(
-        [[KeyboardButton("🚀 استارت")]],
+        [
+            [KeyboardButton(BTN_START)],
+            [KeyboardButton(BTN_OPEN_MENU)],
+        ],
         resize_keyboard=True,
         is_persistent=True,
+        input_field_placeholder="از منوی پایین استارت بزن…",
     )
 
 
-def app_menu_keyboard() -> InlineKeyboardMarkup:
-    """Full app inline menu after Start / onboarding."""
-    return InlineKeyboardMarkup(
+def features_keyboard() -> ReplyKeyboardMarkup:
+    """Expanded custom keyboard with app features (like reference bots)."""
+    return ReplyKeyboardMarkup(
         [
-            [InlineKeyboardButton("📝 ثبت گزارش امروز", callback_data="open_report")],
-            [
-                InlineKeyboardButton("📊 داشبورد من", callback_data="my_panel"),
-                InlineKeyboardButton("📅 تاریخچه", callback_data="history"),
-            ],
-            [
-                InlineKeyboardButton("🏆 رکوردها", callback_data="achievements"),
-                InlineKeyboardButton("⚙️ تنظیمات", callback_data="settings"),
-            ],
-            [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")],
-            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="home")],
-        ]
+            [KeyboardButton(BTN_REPORT)],
+            [KeyboardButton(BTN_PANEL), KeyboardButton(BTN_HISTORY)],
+            [KeyboardButton(BTN_ACHIEVE), KeyboardButton(BTN_SETTINGS)],
+            [KeyboardButton(BTN_HELP)],
+            [KeyboardButton(BTN_CLOSE_MENU)],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="یک گزینه از منو انتخاب کن…",
     )
+
+
+# Backwards-compatible aliases
+def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    return landing_keyboard()
+
+
+def app_menu_keyboard() -> ReplyKeyboardMarkup:
+    """After start, show feature custom keyboard (not inline dump)."""
+    return features_keyboard()
 
 
 def landing_text() -> str:
@@ -682,7 +700,56 @@ def landing_text() -> str:
         "• تعریف تسک‌های روزانه\n"
         "• ثبت گزارش و دیدن پیشرفت\n"
         "• استریک، تاریخچه و یادآوری\n\n"
-        "برای شروع، از منوی پایین روی <b>استارت</b> بزن 👇"
+        "از <b>منوی پایین</b> روی <b>استارت</b> بزن 👇\n"
+        "می‌تونی منوی امکانات را باز و بسته هم بکنی."
+    )
+
+
+def started_text(uid: int) -> str:
+    days = get_challenge_days(uid)
+    tasks = get_user_tasks(uid)
+    pillars = "\n".join(f"{t['emoji']} {escape(t['title'])}" for t in tasks) or "—"
+    return (
+        "<b>✅ آماده استفاده</b>\n"
+        "━━━━━━━━━━━━━━\n"
+        f"📅 چالش فعلی: <b>{days}</b> روز\n"
+        f"✅ تعداد تسک‌ها: <b>{len(tasks)}</b>\n\n"
+        "<b>تسک‌های فعال:</b>\n"
+        f"{pillars}\n\n"
+        "از <b>کیبورد پایین</b> یکی را انتخاب کن.\n"
+        f"برای جمع‌کردن منو: <b>{BTN_CLOSE_MENU}</b>"
+    )
+
+
+async def open_features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, *, edit_query=None):
+    """Open expanded custom keyboard with features."""
+    uid = update.effective_user.id if update.effective_user else None
+    if edit_query is not None:
+        uid = edit_query.from_user.id
+    if uid is None:
+        return
+    if not is_onboarding_done(uid):
+        start_onboarding(uid)
+        await show_onboarding(uid, context, edit_query=edit_query)
+        return
+    text = started_text(uid)
+    kb = features_keyboard()
+    if edit_query is not None:
+        # can't attach reply keyboard via edit reliably; send new message
+        try:
+            await edit_query.edit_message_text(text, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+        await context.bot.send_message(uid, "منوی امکانات باز شد 👇", reply_markup=kb)
+    else:
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+async def close_features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        landing_text(),
+        parse_mode=ParseMode.HTML,
+        reply_markup=landing_keyboard(),
     )
 
 
@@ -1106,7 +1173,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "گزارش فقط با <b>تایید و ثبت نهایی</b> ذخیره می‌شود.\n"
         "اگر امروز قبلاً گزارش داده باشی، برای ویرایش دوباره تأیید گرفته می‌شود."
     )
-    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=features_keyboard())
 
 
 async def show_edit_confirm(chat_id: int, context: ContextTypes.DEFAULT_TYPE, row, edit_query=None):
@@ -1194,7 +1261,7 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update)
     uid = update.effective_user.id
     await update.effective_message.reply_text(
-        user_panel_text(uid), parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard()
+        user_panel_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
     )
 
 
@@ -1202,7 +1269,7 @@ async def history_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update)
     uid = update.effective_user.id
     await update.effective_message.reply_text(
-        history_text(uid), parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard()
+        history_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
     )
 
 
@@ -1233,32 +1300,77 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = (update.effective_message.text or "").strip()
 
-    # Reply-keyboard Start button (landing menu)
-    if text in {"🚀 استارت", "استارت", "start", "Start", "/start"}:
-        # /start command is handled separately; this catches the reply button
-        if text != "/start":
-            if not is_onboarding_done(uid):
-                start_onboarding(uid)
-                await show_onboarding(uid, context)
-                return
-            days = get_challenge_days(uid)
-            tasks = get_user_tasks(uid)
-            pillars = "\n".join(f"{t['emoji']} {escape(t['title'])}" for t in tasks)
-            body = (
-                "<b>✅ شروع شد</b>\n"
-                "━━━━━━━━━━━━━━\n"
-                f"📅 چالش فعلی: <b>{days}</b> روز\n"
-                f"✅ تعداد تسک‌ها: <b>{len(tasks)}</b>\n\n"
-                "<b>تسک‌های فعال:</b>\n"
-                f"{pillars}\n\n"
-                "یکی از گزینه‌ها رو انتخاب کن 👇"
-            )
-            await update.effective_message.reply_text(
-                body,
-                parse_mode=ParseMode.HTML,
-                reply_markup=app_menu_keyboard(),
-            )
+    # ===== Custom reply keyboard actions =====
+    if text in {BTN_START, "استارت", "Start", "start"}:
+        await open_features_menu(update, context)
+        return
+    if text in {BTN_OPEN_MENU, "باز کردن منو", "منو"}:
+        await open_features_menu(update, context)
+        return
+    if text in {BTN_CLOSE_MENU, "بستن منو", BTN_HOME, "منوی اصلی"}:
+        await close_features_menu(update, context)
+        return
+    if text == BTN_REPORT:
+        if not is_onboarding_done(uid):
+            start_onboarding(uid)
+            await show_onboarding(uid, context)
             return
+        await open_report_message(uid, context)
+        return
+    if text == BTN_PANEL:
+        if not is_onboarding_done(uid):
+            start_onboarding(uid)
+            await show_onboarding(uid, context)
+            return
+        await update.effective_message.reply_text(
+            user_panel_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
+        )
+        return
+    if text == BTN_HISTORY:
+        if not is_onboarding_done(uid):
+            start_onboarding(uid)
+            await show_onboarding(uid, context)
+            return
+        await update.effective_message.reply_text(
+            history_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
+        )
+        return
+    if text == BTN_ACHIEVE:
+        if not is_onboarding_done(uid):
+            start_onboarding(uid)
+            await show_onboarding(uid, context)
+            return
+        await update.effective_message.reply_text(
+            achievements_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
+        )
+        return
+    if text == BTN_SETTINGS:
+        if not is_onboarding_done(uid):
+            start_onboarding(uid)
+            await show_onboarding(uid, context)
+            return
+        await update.effective_message.reply_text(
+            settings_text(uid), parse_mode=ParseMode.HTML, reply_markup=settings_keyboard(uid)
+        )
+        return
+    if text == BTN_HELP:
+        await update.effective_message.reply_text(
+            (
+                "<b>ℹ️ راهنمای ARIAMIR TRAKER</b>\n"
+                "ردیاب چالش رشد شخصی\n\n"
+                "از کیبورد پایین:\n"
+                f"• {BTN_START} / {BTN_OPEN_MENU} — باز کردن امکانات\n"
+                f"• {BTN_REPORT} — گزارش روزانه\n"
+                f"• {BTN_PANEL} — داشبورد\n"
+                f"• {BTN_HISTORY} — تاریخچه\n"
+                f"• {BTN_SETTINGS} — تنظیمات\n"
+                f"• {BTN_CLOSE_MENU} — بستن منو (فقط استارت)\n\n"
+                "دستور Bot Menu فقط /start است."
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=features_keyboard(),
+        )
+        return
 
     # Onboarding custom inputs
     if uid in onboarding_state and not is_onboarding_done(uid):
@@ -1274,13 +1386,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_text_state.pop(uid, None)
                 await update.effective_message.reply_text(
                     f"✅ مدت چالش: <b>{days}</b> روز",
-                    parse_mode=ParseMode.HTML,
+                    parse_mode=ParseMode.HTML
                 )
                 await show_onboarding(uid, context)
             except Exception:
                 await update.effective_message.reply_text(
                     "یک عدد معتبر بین 1 تا 3650 بفرست. مثال: <code>45</code>",
-                    parse_mode=ParseMode.HTML,
+                    parse_mode=ParseMode.HTML
                 )
             return
         if mode == "ob_custom_task":
@@ -1301,7 +1413,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_text_state.pop(uid, None)
             await update.effective_message.reply_text(
                 f"✅ تسک <b>{escape(emoji)} {escape(title)}</b> اضافه و انتخاب شد.",
-                parse_mode=ParseMode.HTML,
+                parse_mode=ParseMode.HTML
             )
             await show_onboarding(uid, context)
             return
@@ -1384,7 +1496,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 await update.effective_message.reply_text(
                     "یک عدد معتبر بین 1 تا 3650 بفرست. مثال: <code>38</code> یا <code>21</code>",
-                    parse_mode=ParseMode.HTML,
+                    parse_mode=ParseMode.HTML
                 )
             return
         if mode == "task_add":
@@ -1428,7 +1540,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.effective_message.reply_text(
         "پیامت رو گرفتم ✅\nبرای کار با ربات از منوی زیر استفاده کن.",
-        reply_markup=app_menu_keyboard(),
+        reply_markup=features_keyboard(),
     )
 
 
@@ -1459,7 +1571,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(
                 query,
                 "📅 تعداد روز دلخواه را بفرست.\nمثال: <code>45</code>\nبازه: 1 تا 3650",
-                parse_mode=ParseMode.HTML,
+                parse_mode=ParseMode.HTML
             )
             return
         if data.startswith("ob_toggle:"):
@@ -1480,7 +1592,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(
                 query,
                 "✍️ عنوان تسک سفارشی را بفرست.\nمثال: <code>مطالعه کتاب</code> یا <code>تمرین گیتار</code>",
-                parse_mode=ParseMode.HTML,
+                parse_mode=ParseMode.HTML
             )
             return
         if data == "ob_reset_tasks":
@@ -1533,7 +1645,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{pillars}\n\n"
             "یکی از گزینه‌ها رو انتخاب کن 👇"
         )
-        await safe_edit(query, text, parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        await safe_edit(query, text, parse_mode=ParseMode.HTML)
     elif data == "open_report":
         if not is_onboarding_done(uid):
             if uid not in onboarding_state:
@@ -1555,8 +1667,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query,
             "<b>👌 باشه، گزارش امروزت همون‌طور که ثبت شده باقی موند.</b>\n"
             "اگر خواستی بعداً عوضش کنی، دوباره «ثبت گزارش امروز» رو بزن.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=app_menu_keyboard(),
+            parse_mode=ParseMode.HTML
         )
     elif data.startswith("toggle:"):
         # While a saved report exists and edit is locked, block silent edits
@@ -1619,14 +1730,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query,
             f"<b>{msg}</b>\n\nامتیاز امروز: <b>{score}/{total}</b>\n\n{user_panel_text(uid)}",
             parse_mode=ParseMode.HTML,
-            reply_markup=app_menu_keyboard(),
+            reply_markup=features_keyboard(),
         )
     elif data == "my_panel":
-        await safe_edit(query, user_panel_text(uid), parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        await safe_edit(query, user_panel_text(uid), parse_mode=ParseMode.HTML)
     elif data == "history":
-        await safe_edit(query, history_text(uid), parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        await safe_edit(query, history_text(uid), parse_mode=ParseMode.HTML)
     elif data == "achievements":
-        await safe_edit(query, achievements_text(uid), parse_mode=ParseMode.HTML, reply_markup=app_menu_keyboard())
+        await safe_edit(query, achievements_text(uid), parse_mode=ParseMode.HTML)
     elif data == "settings":
         await safe_edit(query, settings_text(uid), parse_mode=ParseMode.HTML, reply_markup=settings_keyboard(uid))
     elif data == "reonboard":
@@ -1641,7 +1752,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"فعلی: <b>{get_challenge_days(uid)}</b>\n"
             "مثال: <code>21</code> یا <code>38</code> یا <code>100</code>\n"
             "بازه مجاز: 1 تا 3650",
-            parse_mode=ParseMode.HTML,
+            parse_mode=ParseMode.HTML
         )
     elif data == "manage_tasks":
         await safe_edit(
@@ -1664,7 +1775,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "➕ عنوان تسک جدید را بفرست.\n"
             "مثال: <code>مطالعه انگلیسی</code> یا <code>پیاده‌روی</code> یا <code>کدنویسی</code>\n"
             "حداکثر ۴۰ حرف.",
-            parse_mode=ParseMode.HTML,
+            parse_mode=ParseMode.HTML
         )
     elif data.startswith("task_del:"):
         key = data.split(":", 1)[1]
@@ -1704,7 +1815,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(
             query,
             "⏰ ساعت یادآوری رو با فرمت 24 ساعته بفرست. مثال: <code>22:00</code>",
-            parse_mode=ParseMode.HTML,
+            parse_mode=ParseMode.HTML
         )
     elif data == "toggle_pause":
         user = get_user(uid)
@@ -1729,7 +1840,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.execute("UPDATE users SET start_date=? WHERE user_id=?", (today_str(), uid))
             conn.commit()
         log_event("challenge_reset", uid)
-        await safe_edit(query, "✅ چالش از امروز دوباره شروع شد. بزن بریم!", reply_markup=app_menu_keyboard())
+        await safe_edit(query, "✅ چالش از امروز دوباره شروع شد. بزن بریم!")
     elif data == "help":
         await safe_edit(
             query,
@@ -1737,8 +1848,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ARIAMIR TRAKER ردیاب چالش رشد شخصی است.\n"
             "اول روز و تسک‌ها را می‌چینی، بعد هر روز گزارش می‌دهی.\n"
             "از تنظیمات می‌تونی همه چیز را دوباره شخصی‌سازی کنی.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=app_menu_keyboard(),
+            parse_mode=ParseMode.HTML
         )
     elif data.startswith("admin:"):
         await handle_admin_callback(query, context)
@@ -1925,7 +2035,7 @@ async def broadcast_message(context: ContextTypes.DEFAULT_TYPE, text: str) -> tu
             await context.bot.send_message(
                 r["user_id"],
                 f"<b>📣 پیام مدیر ARIAMIR TRAKER</b>\n\n{escape(text)}",
-                parse_mode=ParseMode.HTML,
+                parse_mode=ParseMode.HTML
             )
             sent += 1
         except (Forbidden, BadRequest):
@@ -2084,6 +2194,14 @@ def main():
     app.job_queue.run_daily(
         automatic_backup, time=time(hour=3, minute=10, tzinfo=TZ), name="daily_database_backup"
     )
+
+    # Bot Menu (Telegram side menu): only /start
+    async def _post_init(application: Application):
+        from telegram import BotCommand
+        await application.bot.set_my_commands(
+            [BotCommand("start", "شروع ربات")]
+        )
+    app.post_init = _post_init
 
     print("ARIAMIR TRAKER ULTRA is running...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
