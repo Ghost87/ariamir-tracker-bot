@@ -2122,7 +2122,14 @@ def main():
 
     # Bot Menu (Telegram side menu): only /start
     async def _post_init(application: Application):
-        from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, BotCommandScopeAllChatAdministrators
+        """Keep Bot Menu visible with only /start."""
+        from telegram import (
+            BotCommand,
+            BotCommandScopeDefault,
+            BotCommandScopeAllPrivateChats,
+            BotCommandScopeAllGroupChats,
+            BotCommandScopeAllChatAdministrators,
+        )
         only_start = [BotCommand("start", "شروع ربات")]
         scopes = [
             BotCommandScopeDefault(),
@@ -2131,10 +2138,6 @@ def main():
             BotCommandScopeAllChatAdministrators(),
         ]
         for scope in scopes:
-            try:
-                await application.bot.delete_my_commands(scope=scope)
-            except Exception:
-                pass
             await application.bot.set_my_commands(only_start, scope=scope)
     app.post_init = _post_init
 
