@@ -75,7 +75,7 @@ MOTIVATIONS = [
 # Reply-keyboard labels (custom keyboard)
 # Shown/hidden by Telegram's native grid button beside the message box.
 # /start lives only in Bot Menu commands — not as a keyboard button.
-BTN_REPORT = "📝 ثبت گزارش امروز"
+BTN_REPORT = "🟢 ثبت گزارش امروز"
 BTN_PANEL = "📊 داشبورد من"
 BTN_HISTORY = "📅 تاریخچه"
 BTN_ACHIEVE = "🏆 رکوردها"
