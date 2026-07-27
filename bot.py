@@ -73,15 +73,14 @@ MOTIVATIONS = [
 
 
 # Reply-keyboard labels (custom keyboard)
-# Open/close is done by Telegram's native grid button next to the input box.
-BTN_START = "🚀 استارت"
+# Shown/hidden by Telegram's native grid button beside the message box.
+# /start lives only in Bot Menu commands — not as a keyboard button.
 BTN_REPORT = "📝 ثبت گزارش امروز"
 BTN_PANEL = "📊 داشبورد من"
 BTN_HISTORY = "📅 تاریخچه"
 BTN_ACHIEVE = "🏆 رکوردها"
 BTN_SETTINGS = "⚙️ تنظیمات"
 BTN_HELP = "ℹ️ راهنما"
-BTN_HOME = "🏠 صفحه اول"
 
 pending_reports: dict[int, dict] = {}
 admin_login_state: dict[int, str] = {}
@@ -648,40 +647,34 @@ async def finish_onboarding(user_id: int, query=None, context: ContextTypes.DEFA
 
 
 
-def landing_keyboard() -> ReplyKeyboardMarkup:
-    """Custom keyboard after /start: only Start.
-    Telegram client shows a native grid icon to show/hide this keyboard.
-    """
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton(BTN_START)]],
-        resize_keyboard=True,
-        is_persistent=True,
-        input_field_placeholder="استارت را بزن…",
-    )
-
-
 def features_keyboard() -> ReplyKeyboardMarkup:
-    """Expanded custom keyboard with app features.
-    User opens/closes it with Telegram's built-in keyboard toggle (grid icon).
+    """Persistent custom keyboard with all user features.
+    User shows/hides it with Telegram's built-in grid icon next to the input.
     """
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(BTN_REPORT)],
             [KeyboardButton(BTN_PANEL), KeyboardButton(BTN_HISTORY)],
             [KeyboardButton(BTN_ACHIEVE), KeyboardButton(BTN_SETTINGS)],
-            [KeyboardButton(BTN_HELP), KeyboardButton(BTN_HOME)],
+            [KeyboardButton(BTN_HELP)],
         ],
         resize_keyboard=True,
         is_persistent=True,
-        input_field_placeholder="یک گزینه انتخاب کن…",
+        one_time_keyboard=False,
+        input_field_placeholder="یک گزینه از منو انتخاب کن…",
     )
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    return landing_keyboard()
+    return features_keyboard()
 
 
 def app_menu_keyboard() -> ReplyKeyboardMarkup:
+    return features_keyboard()
+
+
+def landing_keyboard() -> ReplyKeyboardMarkup:
+    """Alias: after /start we always show the full feature keyboard."""
     return features_keyboard()
 
 
@@ -696,8 +689,8 @@ def landing_text() -> str:
         "• تعریف تسک‌های روزانه\n"
         "• ثبت گزارش و دیدن پیشرفت\n"
         "• استریک، تاریخچه و یادآوری\n\n"
-        "از کیبورد پایین روی <b>استارت</b> بزن 👇\n"
-        "برای باز/بسته کردن کیبورد، همان دکمه <b>چهارخانه</b> کنار کادر پیام را بزن."
+        "از <b>کیبورد پایین</b> یکی از گزینه‌ها را انتخاب کن 👇\n"
+        "اگر کیبورد را نمی‌بینی، دکمه <b>چهارخانه</b> کنار کادر پیام را بزن."
     )
 
 
@@ -712,41 +705,18 @@ def started_text(uid: int) -> str:
         f"✅ تعداد تسک‌ها: <b>{len(tasks)}</b>\n\n"
         "<b>تسک‌های فعال:</b>\n"
         f"{pillars}\n\n"
-        "از <b>کیبورد پایین</b> یکی را انتخاب کن.\n"
-        "برای مخفی/ظاهر کردن کیبورد → دکمه چهارخانه کنار کادر نوشتن."
+        "از کیبورد پایین یکی را انتخاب کن 👇"
     )
 
 
-async def open_features_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, *, edit_query=None):
-    """Show expanded feature custom keyboard."""
-    uid = update.effective_user.id if update and update.effective_user else None
-    if edit_query is not None:
-        uid = edit_query.from_user.id
-    if uid is None:
-        return
-    if not is_onboarding_done(uid):
-        start_onboarding(uid)
-        await show_onboarding(uid, context, edit_query=edit_query)
-        return
-    text = started_text(uid)
-    kb = features_keyboard()
-    if edit_query is not None:
-        try:
-            await edit_query.edit_message_text(text, parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-        await context.bot.send_message(uid, "منوی امکانات آماده است 👇", reply_markup=kb)
-    else:
-        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-
-
-async def go_home_screen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Back to landing with only Start on custom keyboard."""
-    await update.effective_message.reply_text(
-        landing_text(),
-        parse_mode=ParseMode.HTML,
-        reply_markup=landing_keyboard(),
-    )
+async def ensure_user_ready(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """If onboarding incomplete, start it and return False."""
+    uid = update.effective_user.id
+    if is_onboarding_done(uid):
+        return True
+    start_onboarding(uid)
+    await show_onboarding(uid, context)
+    return False
 
 
 def report_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -1138,16 +1108,27 @@ async def send_home(chat_id: int, context: ContextTypes.DEFAULT_TYPE):
         chat_id,
         landing_text(),
         parse_mode=ParseMode.HTML,
-        reply_markup=landing_keyboard(),
+        reply_markup=features_keyboard(),
     )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update)
+    uid = update.effective_user.id
+    # Always attach feature custom keyboard; Telegram grid icon shows/hides it.
+    if not is_onboarding_done(uid):
+        await update.effective_message.reply_text(
+            landing_text(),
+            parse_mode=ParseMode.HTML,
+            reply_markup=features_keyboard(),
+        )
+        start_onboarding(uid)
+        await show_onboarding(uid, context)
+        return
     await update.effective_message.reply_text(
-        landing_text(),
+        landing_text() + "\n\n" + started_text(uid),
         parse_mode=ParseMode.HTML,
-        reply_markup=landing_keyboard(),
+        reply_markup=features_keyboard(),
     )
 
 
@@ -1156,18 +1137,15 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "<b>ℹ️ راهنمای ARIAMIR TRAKER</b>\n"
         "ردیاب چالش رشد شخصی\n\n"
-        "/start — شروع / راه‌اندازی چالش\n"
-        "/report — ثبت گزارش امروز\n"
-        "/panel — داشبورد پیشرفت\n"
-        "/history — تاریخچه گزارش‌ها\n"
-        "/settings — تنظیمات روز، تسک و یادآوری\n"
-        "/admin — پنل مدیریت\n\n"
-        "<b>چطور کار می‌کند؟</b>\n"
-        "1) مدت چالش را مشخص می‌کنی\n"
-        "2) تسک‌های روزانه را انتخاب یا می‌سازی\n"
-        "3) هر روز گزارش می‌دهی و پیشرفت می‌بینی\n\n"
-        "گزارش فقط با <b>تایید و ثبت نهایی</b> ذخیره می‌شود.\n"
-        "اگر امروز قبلاً گزارش داده باشی، برای ویرایش دوباره تأیید گرفته می‌شود."
+        "از <b>کیبورد پایین</b> استفاده کن (دکمه چهارخانه کنار کادر پیام):\n"
+        f"• {BTN_REPORT}\n"
+        f"• {BTN_PANEL}\n"
+        f"• {BTN_HISTORY}\n"
+        f"• {BTN_ACHIEVE}\n"
+        f"• {BTN_SETTINGS}\n"
+        f"• {BTN_HELP}\n\n"
+        "دستور منوی ربات: فقط /start\n\n"
+        "گزارش فقط با <b>تایید و ثبت نهایی</b> ذخیره می‌شود."
     )
     await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=features_keyboard())
 
@@ -1297,75 +1275,41 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.effective_message.text or "").strip()
 
     # ===== Custom reply keyboard actions =====
-    # Note: open/close of the keyboard UI is Telegram's native grid button.
-    # We only switch keyboard *content* (Start-only vs features).
-    if text in {BTN_START, "استارت", "Start", "start"}:
-        await open_features_menu(update, context)
-        return
-    if text in {BTN_HOME, "منوی اصلی", "صفحه اول", "خانه"}:
-        await go_home_screen(update, context)
-        return
     if text == BTN_REPORT:
-        if not is_onboarding_done(uid):
-            start_onboarding(uid)
-            await show_onboarding(uid, context)
+        if not await ensure_user_ready(update, context):
             return
         await open_report_message(uid, context)
         return
     if text == BTN_PANEL:
-        if not is_onboarding_done(uid):
-            start_onboarding(uid)
-            await show_onboarding(uid, context)
+        if not await ensure_user_ready(update, context):
             return
         await update.effective_message.reply_text(
             user_panel_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
         )
         return
     if text == BTN_HISTORY:
-        if not is_onboarding_done(uid):
-            start_onboarding(uid)
-            await show_onboarding(uid, context)
+        if not await ensure_user_ready(update, context):
             return
         await update.effective_message.reply_text(
             history_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
         )
         return
     if text == BTN_ACHIEVE:
-        if not is_onboarding_done(uid):
-            start_onboarding(uid)
-            await show_onboarding(uid, context)
+        if not await ensure_user_ready(update, context):
             return
         await update.effective_message.reply_text(
             achievements_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard()
         )
         return
     if text == BTN_SETTINGS:
-        if not is_onboarding_done(uid):
-            start_onboarding(uid)
-            await show_onboarding(uid, context)
+        if not await ensure_user_ready(update, context):
             return
         await update.effective_message.reply_text(
             settings_text(uid), parse_mode=ParseMode.HTML, reply_markup=settings_keyboard(uid)
         )
         return
     if text == BTN_HELP:
-        await update.effective_message.reply_text(
-            (
-                "<b>ℹ️ راهنمای ARIAMIR TRAKER</b>\n"
-                "ردیاب چالش رشد شخصی\n\n"
-                "کیبورد پایین (دکمه چهارخانه کنار کادر پیام):\n"
-                f"• {BTN_START} — شروع / باز شدن امکانات\n"
-                f"• {BTN_REPORT} — گزارش روزانه\n"
-                f"• {BTN_PANEL} — داشبورد\n"
-                f"• {BTN_HISTORY} — تاریخچه\n"
-                f"• {BTN_SETTINGS} — تنظیمات\n"
-                f"• {BTN_HOME} — برگشت به صفحه اول (فقط استارت)\n\n"
-                "باز و بسته کردن خودِ کیبورد با دکمه <b>چهارخانه</b> تلگرام است.\n"
-                "در منوی دستورات ربات فقط /start وجود دارد."
-            ),
-            parse_mode=ParseMode.HTML,
-            reply_markup=features_keyboard(),
-        )
+        await help_cmd(update, context)
         return
 
     # Onboarding custom inputs
@@ -1612,7 +1556,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     if data == "home":
-        # Back to landing: only Start on reply keyboard
         try:
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
@@ -1621,27 +1564,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=uid,
             text=landing_text(),
             parse_mode=ParseMode.HTML,
-            reply_markup=landing_keyboard(),
+            reply_markup=features_keyboard(),
         )
     elif data == "menu_start":
-        # Inline fallback if old messages still have it
+        # legacy inline start if any old message remains
         if not is_onboarding_done(uid):
             start_onboarding(uid)
             await show_onboarding(uid, context, edit_query=query)
-            return
-        days = get_challenge_days(uid)
-        tasks = get_user_tasks(uid)
-        pillars = "\n".join(f"{t['emoji']} {escape(t['title'])}" for t in tasks)
-        text = (
-            "<b>✅ شروع شد</b>\n"
-            "━━━━━━━━━━━━━━\n"
-            f"📅 چالش فعلی: <b>{days}</b> روز\n"
-            f"✅ تعداد تسک‌ها: <b>{len(tasks)}</b>\n\n"
-            "<b>تسک‌های فعال:</b>\n"
-            f"{pillars}\n\n"
-            "یکی از گزینه‌ها رو انتخاب کن 👇"
-        )
-        await safe_edit(query, text, parse_mode=ParseMode.HTML)
+        else:
+            await context.bot.send_message(uid, started_text(uid), parse_mode=ParseMode.HTML, reply_markup=features_keyboard())
     elif data == "open_report":
         if not is_onboarding_done(uid):
             if uid not in onboarding_state:
