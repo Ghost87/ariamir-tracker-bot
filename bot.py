@@ -10,6 +10,7 @@ from html import escape
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.constants import KeyboardButtonStyle
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden
 from telegram.ext import (
@@ -653,7 +654,8 @@ def features_keyboard() -> ReplyKeyboardMarkup:
     """
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(BTN_REPORT)],
+            # SUCCESS = green background (Bot API button style, like reference bots)
+            [KeyboardButton(BTN_REPORT, style=KeyboardButtonStyle.SUCCESS)],
             [KeyboardButton(BTN_PANEL), KeyboardButton(BTN_HISTORY)],
             [KeyboardButton(BTN_ACHIEVE), KeyboardButton(BTN_SETTINGS)],
             [KeyboardButton(BTN_HELP)],
