@@ -659,7 +659,9 @@ def features_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(BTN_HELP)],
         ],
         resize_keyboard=True,
-        is_persistent=True,
+        # is_persistent must be False so Telegram shows the native grid
+        # button to open/close this custom keyboard (like the reference bot).
+        is_persistent=False,
         one_time_keyboard=False,
         input_field_placeholder="یک گزینه از منو انتخاب کن…",
     )
