@@ -34,9 +34,11 @@ permissions:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # Manual: selected minutes + buffer
-    # Schedule fallback: ~95 minutes
-    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('{0}', github.event.inputs.minutes)) + 15 || 100 }}
+    # GitHub Actions expressions do NOT support arithmetic (+).
+    # Keep a safe hard ceiling here; the real stop time is controlled by
+    # `timeout $SECONDS` in the run step using the minutes input.
+    # 360 ~= max input 340 + install/save buffer
+    timeout-minutes: 360
 
     steps:
       - name: Resolve run duration
@@ -50,7 +52,7 @@ jobs:
           fi
 
           # keep digits only
-          MINUTES="$(echo "$RAW" | tr -cd '0-9')"
+          MINUTES="$(printf '%s' "$RAW" | tr -cd '0-9')"
           if [ -z "$MINUTES" ]; then
             MINUTES=90
           fi
@@ -60,8 +62,10 @@ jobs:
           if [ "$MINUTES" -gt 340 ]; then MINUTES=340; fi
 
           SECONDS=$((MINUTES * 60))
-          echo "minutes=$MINUTES" >> "$GITHUB_OUTPUT"
-          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+          {
+            echo "minutes=$MINUTES"
+            echo "seconds=$SECONDS"
+          } >> "$GITHUB_OUTPUT"
           echo "Resolved duration: ${MINUTES} minute(s) = ${SECONDS}s"
 
       - name: Checkout repository
