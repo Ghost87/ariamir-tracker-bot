@@ -1,0 +1,45 @@
+name: Bot Watchdog (auto-restart)
+
+# 🐕 نگهبان ربات — هر ۳۰ دقیقه
+# اگر هیچ اجرای فعال یا درصف از run-bot-nightly.yml وجود نداشته باشد،
+# خودکار یک اجرای تازه می‌سازد → ربات عملاً ۲۴/۷ روشن می‌ماند.
+
+on:
+  schedule:
+    # دقیقه‌های ۷ و ۳۷ — میانِ دوری زمان‌بند اصلی (۲۳ */۶) برای پوشش دقیق‌تر
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 🐕 بررسی وضعیت و راه‌اندازی مجدد در صورت نیاز
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          api() {
+            curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" "$@"
+          }
+          BUSY=0
+          for S in in_progress queued waiting requested; do
+            C=$(api "https://api.github.com/repos/$REPO/actions/workflows/run-bot-nightly.yml/runs?status=$S&per_page=1" \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('total_count',0))")
+            BUSY=$((BUSY + C))
+          done
+          if [ "$BUSY" = "0" ]; then
+            echo "⛔ هیچ اجرای فعالی نیست — ساخت اجرای تازه..."
+            api -X POST \
+              "https://api.github.com/repos/$REPO/actions/workflows/run-bot-nightly.yml/dispatches" \
+              -d '{"ref":"main"}'
+            echo "✅ ربات دوباره روشن شد."
+          else
+            echo "✅ ربات روشن یا در صف است (BUSY=$BUSY) — مداخله لازم نیست."
+          fi

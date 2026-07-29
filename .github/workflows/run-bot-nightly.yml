@@ -1,28 +1,24 @@
-name: Run ARIAMIR TRAKER windowed
+name: Run ARIAMIR TRAKER
 
-# IMPORTANT about free minutes (private repos):
-# GitHub Free includes ~2000 Actions minutes/month for PRIVATE repos.
-# Keep runs intentional. For PUBLIC repos, Actions minutes are much freer.
+# 🆕 حالت ۲۴/۷ (ریپو PUBLIC است → دقیقه‌ها رایگان و نامحدودند):
+#   هر ۶ ساعت خودکار بالا می‌آید و ~۵:۴۵ ساعت روشن می‌ماند؛ اجرای بعدی در صف
+#   می‌ایستد و درست وقتی قبلی تمام شد شروع می‌شود → پوشش تقریباً شبانه‌روزی.
+#   ورک‌فلوی bot-watchdog.yml هم هر ۳۰ دقیقه چک می‌کند و اگر خاموش بود روشنش می‌کند.
 #
-# Manual runs:
-#   Actions -> this workflow -> Run workflow -> set minutes
-#
-# Scheduled default:
-#   Tehran ~21:30 for 90 minutes
-#
-# Memory still persists on branch `bot-data`.
+# Manual runs: Actions → this workflow → Run workflow → set minutes
+# Memory persists on branch `bot-data` (users/reports + backups).
 
 on:
   workflow_dispatch:
     inputs:
       minutes:
-        description: "چند دقیقه روشن بماند؟ (حداکثر پیشنهادی 340)"
+        description: "چند دقیقه روشن بماند؟ (پیش‌فرض ۳۴۵ — حداکثر مؤثر)"
         required: true
-        default: "180"
+        default: "345"
         type: string
   schedule:
-    # Tehran 21:30 -> UTC 18:00 (UTC+3:30)
-    - cron: "0 18 * * *"
+    # هر ۶ ساعت — با فاصله از ساعت رُند برای دقّت بهتر صف گیت‌هاب
+    - cron: "23 */6 * * *"
 
 concurrency:
   group: ariamir-tracker-bot-live
@@ -37,10 +33,26 @@ jobs:
     # GitHub Actions expressions do NOT support arithmetic (+).
     # Keep a safe hard ceiling here; the real stop time is controlled by
     # `timeout $SECONDS` in the run step using the minutes input.
-    # 360 ~= max input 340 + install/save buffer
+    # 360 ~= max input 350 + install/save buffer
     timeout-minutes: 360
 
     steps:
+      - name: 🔍 Preflight — بررسی سکرت‌ها
+        env:
+          SECRET_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          SECRET_ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          SECRET_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          MISSING=""
+          [ -z "$SECRET_BOT_TOKEN" ] && MISSING="$MISSING BOT_TOKEN"
+          [ -z "$SECRET_ADMIN_USERNAME" ] && MISSING="$MISSING ADMIN_USERNAME"
+          [ -z "$SECRET_ADMIN_PASSWORD" ] && MISSING="$MISSING ADMIN_PASSWORD"
+          if [ -n "$MISSING" ]; then
+            echo "::error title=Secrets ناقص!::این سکرت‌ها در Settings → Secrets and variables → Actions ست نشده‌اند:$MISSING"
+            exit 42
+          fi
+          echo "✅ هر ۳ سکرت ست هستند — بریم بوم!"
+
       - name: Resolve run duration
         id: duration
         run: |
@@ -48,18 +60,18 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             RAW="${{ github.event.inputs.minutes }}"
           else
-            RAW="90"
+            RAW="345"
           fi
 
           # keep digits only
           MINUTES="$(printf '%s' "$RAW" | tr -cd '0-9')"
           if [ -z "$MINUTES" ]; then
-            MINUTES=90
+            MINUTES=345
           fi
 
-          # clamp: 1 .. 340
+          # clamp: 1 .. 345
           if [ "$MINUTES" -lt 1 ]; then MINUTES=1; fi
-          if [ "$MINUTES" -gt 340 ]; then MINUTES=340; fi
+          if [ "$MINUTES" -gt 345 ]; then MINUTES=345; fi
 
           SECONDS=$((MINUTES * 60))
           {
@@ -69,12 +81,12 @@ jobs:
           echo "Resolved duration: ${MINUTES} minute(s) = ${SECONDS}s"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
