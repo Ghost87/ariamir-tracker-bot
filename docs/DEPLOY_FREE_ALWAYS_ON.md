@@ -101,7 +101,7 @@ nano .env
 
 ```env
 BOT_TOKEN=توکن_جدید_ربات
-ADMIN_USERNAME=Amir_seyedi_1387
+ADMIN_USERNAME=change_me
 ADMIN_PASSWORD=رمز_قوی_تر_پیشنهادی
 REMINDER_HOUR=22
 REMINDER_MINUTE=0
@@ -177,7 +177,7 @@ sudo nano /opt/ariamir-tracker/.env
 
 ```env
 BOT_TOKEN=توکن_جدید_ربات
-ADMIN_USERNAME=Amir_seyedi_1387
+ADMIN_USERNAME=change_me
 ADMIN_PASSWORD=رمز_قوی_تر_پیشنهادی
 REMINDER_HOUR=22
 REMINDER_MINUTE=0

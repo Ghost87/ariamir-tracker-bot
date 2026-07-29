@@ -29,8 +29,8 @@
 پنل مدیریت:
 - با دستور /admin فعال شود.
 - ورود با نام کاربری و رمز انجام شود:
-  ADMIN_USERNAME=Amir_seyedi_1387
-  ADMIN_PASSWORD=Amir_seyedi_1387
+  ADMIN_USERNAME=change_me
+  ADMIN_PASSWORD=change_me
 - این مقادیر از .env خوانده شوند.
 - بعد از ورود موفق، ادمین بتواند:
   1. لیست کاربران را ببیند.
