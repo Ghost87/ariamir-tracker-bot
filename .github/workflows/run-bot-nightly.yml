@@ -2,17 +2,24 @@ name: Run ARIAMIR TRAKER windowed
 
 # IMPORTANT about free minutes (private repos):
 # GitHub Free includes ~2000 Actions minutes/month for PRIVATE repos.
-# The old config (4 x ~3h45m daily) burned ~27000 minutes/month and dies in ~2 days.
+# Keep runs intentional. For PUBLIC repos, Actions minutes are much freer.
 #
-# This lean config targets ~1 evening window only:
-#   Tehran 21:30 for ~90 minutes  => ~2700 min/month (still slightly over free private)
-# For private repos that already exhausted minutes, make the repo PUBLIC
-# (public Actions minutes are free) OR use a free always-on host (Oracle VPS).
+# Manual runs:
+#   Actions -> this workflow -> Run workflow -> set minutes
+#
+# Scheduled default:
+#   Tehran ~21:30 for 90 minutes
 #
 # Memory still persists on branch `bot-data`.
 
 on:
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: "چند دقیقه روشن بماند؟ (حداکثر پیشنهادی 340)"
+        required: true
+        default: "180"
+        type: string
   schedule:
     # Tehran 21:30 -> UTC 18:00 (UTC+3:30)
     - cron: "0 18 * * *"
@@ -27,10 +34,36 @@ permissions:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # ~95 minutes hard stop
-    timeout-minutes: 100
+    # Manual: selected minutes + buffer
+    # Schedule fallback: ~95 minutes
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('{0}', github.event.inputs.minutes)) + 15 || 100 }}
 
     steps:
+      - name: Resolve run duration
+        id: duration
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW="${{ github.event.inputs.minutes }}"
+          else
+            RAW="90"
+          fi
+
+          # keep digits only
+          MINUTES="$(echo "$RAW" | tr -cd '0-9')"
+          if [ -z "$MINUTES" ]; then
+            MINUTES=90
+          fi
+
+          # clamp: 1 .. 340
+          if [ "$MINUTES" -lt 1 ]; then MINUTES=1; fi
+          if [ "$MINUTES" -gt 340 ]; then MINUTES=340; fi
+
+          SECONDS=$((MINUTES * 60))
+          echo "minutes=$MINUTES" >> "$GITHUB_OUTPUT"
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+          echo "Resolved duration: ${MINUTES} minute(s) = ${SECONDS}s"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -105,23 +138,27 @@ jobs:
       - name: Show planned window (Asia/Tehran)
         run: |
           python - <<'PY'
+          import os
           from datetime import datetime, timedelta
           from zoneinfo import ZoneInfo
           tz = ZoneInfo("Asia/Tehran")
           now = datetime.now(tz)
-          end = now + timedelta(minutes=90)
+          minutes = int("${{ steps.duration.outputs.minutes }}")
+          end = now + timedelta(minutes=minutes)
           print(f"Start Tehran: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
           print(f"Target end:  {end.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-          print("Lean schedule: once daily ~21:30 Tehran for ~90 minutes")
+          print(f"Requested duration: {minutes} minute(s)")
           print("Memory: bot-data branch")
+          print(f"Trigger: {os.environ.get('GITHUB_EVENT_NAME', '?')}")
           PY
 
-      - name: Run bot for evening window (~90m)
+      - name: Run bot for selected duration
         run: |
           set +e
-          echo "Starting ARIAMIR TRAKER lean windowed run..."
-          # 5400s = 90 minutes
-          timeout 5400 python bot.py
+          MINUTES="${{ steps.duration.outputs.minutes }}"
+          SECONDS="${{ steps.duration.outputs.seconds }}"
+          echo "Starting ARIAMIR TRAKER for ${MINUTES} minute(s) (${SECONDS}s)..."
+          timeout "$SECONDS" python bot.py
           code=$?
           echo "Bot process exited with code: $code"
           echo "Windowed run finished."
