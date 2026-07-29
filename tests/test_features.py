@@ -13,7 +13,7 @@ tmp = tempfile.mkdtemp(prefix="ariamir_test_")
 os.environ["DATA_DIR"] = tmp
 os.environ["DB_PATH"] = str(Path(tmp) / "test.db")
 os.environ["BACKUP_DIR"] = str(Path(tmp) / "backups")
-os.environ["BOT_TOKEN"] = "0000000000:TEST_TOKEN_FOR_UNIT_TESTS_ONLY"
+os.environ["BOT_TOKEN"] = "TEST_BOT_TOKEN_NOT_REAL"
 os.environ["CHALLENGE_DAYS"] = "38"
 
 # Import after env is set
