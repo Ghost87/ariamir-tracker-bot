@@ -25,8 +25,9 @@ from telegram.ext import (
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Amir_seyedi_1387").strip()
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Amir_seyedi_1387").strip()
+# 🔐 بدون پیش‌فرض: یوزر/پس فقط از env میاد (ترک ریپوی public)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 REMINDER_HOUR = int(os.getenv("REMINDER_HOUR", "22"))
 REMINDER_MINUTE = int(os.getenv("REMINDER_MINUTE", "0"))
 DEFAULT_CHALLENGE_DAYS = int(os.getenv("CHALLENGE_DAYS", "38"))
@@ -1262,6 +1263,11 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update)
     uid = update.effective_user.id
+    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+        await update.effective_message.reply_text(
+            "🔐 ورود ادمین فعلاً غیرفعاله — تو env مقدارهای ADMIN_USERNAME و ADMIN_PASSWORD رو بذار."
+        )
+        return
     if is_admin(uid):
         await update.effective_message.reply_text(
             "<b>🔐 پنل مدیریت ARIAMIR TRAKER</b>\nیک گزینه را انتخاب کن:",

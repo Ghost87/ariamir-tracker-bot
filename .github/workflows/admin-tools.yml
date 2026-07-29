@@ -1,0 +1,149 @@
+name: 🧹 Admin Tools — پاک‌سازی داده‌ها
+
+# ابزار دکمه‌ای پاک‌سازی — ARIAMIR
+# نحوه‌ی استفاده (مهم، ترتیب را رعایت کنید):
+#   ۱) اگر اجرای فعالی از «Run ARIAMIR TRAKER» هست: Actions → اجرا → Cancel workflow
+#      (این ورک‌فلو خودش هم چک می‌کند و اگر ربات روشن بود، اجازه‌ی ادامه نمی‌دهد)
+#   ۲) Actions → «🧹 Admin Tools» → Run workflow → حالت را انتخاب کنید:
+#        • wipe_all     = حذف همه‌ی کاربران + گزارش‌ها + رویدادها + ادمین‌ها
+#        • history_only = فقط حذف تاریخچه (reports + events)، کاربران می‌مانند
+#   ۳) پایان اجرا → ربات را دوباره روشن کنید (Run دستی یا تیک نگهبان هر ۳۰ دقیقه).
+# نتیجه روی برنچ bot-data ذخیره می‌شود.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "wipe_all = همه‌چیز | history_only = فقط تاریخچه (کاربران می‌مانند)"
+        required: true
+        type: choice
+        options:
+          - wipe_all
+          - history_only
+        default: history_only
+
+concurrency:
+  group: ariamir-tracker-bot-live
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  admin-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      TOOL_ACTION: ${{ inputs.action }}
+
+    steps:
+      - name: 🛡️ Guard — ربات نباید روشن باشد
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          api() {
+            curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" "$@"
+          }
+          BUSY=0
+          for S in in_progress queued waiting requested; do
+            C=$(api "https://api.github.com/repos/$REPO/actions/workflows/run-bot-nightly.yml/runs?status=$S&per_page=1" \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('total_count',0))")
+            BUSY=$((BUSY + C))
+          done
+          if [ "$BUSY" != "0" ]; then
+            echo "::error title=ربات روشن/در صف است!::ابتدا Actions → اجرای «Run ARIAMIR TRAKER» را Cancel کنید و دوباره این ابزار را اجرا کنید. (BUSY=$BUSY)"
+            exit 1
+          fi
+          echo "✅ هیچ اجرای ربات فعال نیست — امنه، ادامه می‌دهیم."
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Restore database from bot-data branch
+        run: |
+          set -e
+          mkdir -p data
+          if git ls-remote --exit-code --heads origin bot-data >/dev/null 2>&1; then
+            git fetch origin bot-data:bot-data --depth=1
+            git checkout bot-data -- data 2>/dev/null || true
+            echo "دیتابیس از bot-data بازیابی شد."
+            ls -la data || true
+          else
+            echo "برنچ bot-data وجود ندارد."
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: 🧹 اجرای پاک‌سازی
+        run: |
+          set -e
+          python scripts/admin_tools.py --action "$TOOL_ACTION" --db data/ariamir_tracker.db
+
+      - name: 🛡️ Guard دوم — قبل از ذخیره، دوباره چک
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          api() {
+            curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" "$@"
+          }
+          BUSY=0
+          for S in in_progress queued waiting requested; do
+            C=$(api "https://api.github.com/repos/$REPO/actions/workflows/run-bot-nightly.yml/runs?status=$S&per_page=1" \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('total_count',0))")
+            BUSY=$((BUSY + C))
+          done
+          if [ "$BUSY" != "0" ]; then
+            echo "::error::در همین لحظه اجرای ربات تازه‌ای شروع شد — ذخیره انجام نمی‌شود. آن را Cancel کنید و دوباره ابزار را اجرا کنید."
+            exit 1
+          fi
+          echo "✅ همچنان امن است."
+
+      - name: 💾 ذخیره‌ی دیتابیس روی bot-data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          WORK=$(mktemp -d)
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          git clone --branch bot-data --depth 1 "$REPO_URL" "$WORK"
+          rm -rf "$WORK/data"
+          mkdir -p "$WORK/data"
+          cp -a data/. "$WORK/data/"
+          rm -f "$WORK/.env" "$WORK/data/.env" 2>/dev/null || true
+
+          cat > "$WORK/.gitignore" <<'EOF'
+          .env
+          __pycache__/
+          EOF
+
+          cd "$WORK"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "تغییری برای ذخیره نبود."
+          else
+            git commit -m "🧹 Admin tools: ${TOOL_ACTION} $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push origin HEAD:bot-data
+            echo "✅ دیتابیس پاک‌سازی‌شده روی برنچ bot-data ذخیره شد."
+          fi
+
+      - name: 📢 خلاصه
+        if: success()
+        run: |
+          echo "🧹 عملیات «${TOOL_ACTION}» انجام و ذخیره شد."
+          echo "ℹ️ ربات را دوباره روشن کن (Run دستی یا صبر تا تیک نگهبان — دقیقه‌های ۷ و ۳۷)."

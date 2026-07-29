@@ -34,6 +34,17 @@ jobs:
               | python3 -c "import sys,json;print(json.load(sys.stdin).get('total_count',0))")
             BUSY=$((BUSY + C))
           done
+          # 🛡️ اگر ابزار پاک‌سازی (🧹 Admin Tools) مشغول است، نگهبان دست نگه می‌دارد
+          ADMIN_BUSY=0
+          for S in in_progress queued waiting requested; do
+            C=$(api "https://api.github.com/repos/$REPO/actions/workflows/admin-tools.yml/runs?status=$S&per_page=1" \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('total_count',0))")
+            ADMIN_BUSY=$((ADMIN_BUSY + C))
+          done
+          if [ "$ADMIN_BUSY" != "0" ]; then
+            echo "🧹 ابزار مدیریتی در حال کار است — نگهبان این دور کاری نمی‌کند (ضدتداخل)."
+            exit 0
+          fi
           if [ "$BUSY" = "0" ]; then
             echo "⛔ هیچ اجرای فعالی نیست — ساخت اجرای تازه..."
             api -X POST \
