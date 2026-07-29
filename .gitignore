@@ -1,8 +1,9 @@
 # secrets
 .env
-.env.local
+.env.*
+!.env.example
 
-# runtime
+# runtime / data
 data/
 backups/
 *.db
@@ -12,17 +13,16 @@ backups/
 
 # python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .venv/
 venv/
 
-# logs / editor
-run.log
+# logs / editor / OS
 *.log
+run.log
 .DS_Store
 .idea/
 .vscode/
