@@ -85,6 +85,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 🔓 رمزگشایی سورس (src.enc)
+        env:
+          SRC_KEY: ${{ secrets.SRC_KEY }}
+        run: |
+          set -e
+          if [ -z "$SRC_KEY" ]; then
+            echo "::error title=Secret ناقص::سکرت SRC_KEY در تنظیمات ریپو ست نشده است"
+            exit 42
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 -md sha256 -in src.enc -pass "pass:$SRC_KEY" | tar -xz
+          echo "✅ سورس رمزگشایی شد"
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
